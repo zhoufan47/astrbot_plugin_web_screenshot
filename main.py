@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 from typing import Optional
@@ -24,6 +25,7 @@ class WebScreenshotPlugin(Star):
         super().__init__(context)
         self._browser = None
         self._playwright = None
+        self._screenshot_lock = asyncio.Lock()
 
     async def initialize(self):
         """异步初始化，预启动 Playwright 浏览器实例"""
@@ -68,7 +70,6 @@ class WebScreenshotPlugin(Star):
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
-                    "--single-process",
                     "--no-proxy-server",
                 ],
                 env=browser_env,
@@ -92,41 +93,44 @@ class WebScreenshotPlugin(Star):
         :param timeout: 超时时间（毫秒）
         :return: 截图文件的临时路径
         """
-        await self._ensure_browser()
+        async with self._screenshot_lock:
+            # 再次检查浏览器连接状态（防止等待锁期间浏览器断开）
+            if self._browser is None or not self._browser.is_connected():
+                await self._ensure_browser()
 
-        # 自动补全 URL 协议
-        if not url.startswith(("http://", "https://")):
-            url = "https://" + url
+            # 自动补全 URL 协议
+            if not url.startswith(("http://", "https://")):
+                url = "https://" + url
 
-        context = await self._browser.new_context(
-            viewport={"width": width, "height": height},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-        )
+            context = await self._browser.new_context(
+                viewport={"width": width, "height": height},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+            )
 
-        page = await context.new_page()
-        try:
-            await page.goto(url, wait_until="networkidle", timeout=timeout)
-            # 等待页面稳定
-            await page.wait_for_timeout(1000)
+            page = await context.new_page()
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=timeout)
+                # 等待页面稳定
+                await page.wait_for_timeout(1000)
 
-            # 生成截图文件
-            fd, filepath = tempfile.mkstemp(suffix=".png")
-            os.close(fd)
+                # 生成截图文件
+                fd, filepath = tempfile.mkstemp(suffix=".png")
+                os.close(fd)
 
-            screenshot_options = {"path": filepath, "type": "png"}
-            if full_page:
-                screenshot_options["full_page"] = True
+                screenshot_options = {"path": filepath, "type": "png"}
+                if full_page:
+                    screenshot_options["full_page"] = True
 
-            await page.screenshot(**screenshot_options)
-            logger.info(f"WebScreenshotPlugin: Screenshot saved to {filepath}")
-            return filepath
-        finally:
-            await page.close()
-            await context.close()
+                await page.screenshot(**screenshot_options)
+                logger.info(f"WebScreenshotPlugin: Screenshot saved to {filepath}")
+                return filepath
+            finally:
+                await page.close()
+                await context.close()
 
     # ==================== 手动指令方式 ====================
 
