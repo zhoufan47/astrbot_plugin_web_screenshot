@@ -1,6 +1,7 @@
 import asyncio
 import os
 import tempfile
+import time
 from typing import Optional
 
 from astrbot.api.event import filter, AstrMessageEvent
@@ -21,11 +22,18 @@ class WebScreenshotPlugin(Star):
     支持手动指令和 LLM 工具调用两种方式。
     """
 
+    # 每截图多少次重启一次浏览器，防止 Chromium 长期运行内存膨胀
+    SCREENSHOTS_PER_RESTART = 50
+    # 浏览器空闲多少秒后自动关闭（节省内存），默认 5 分钟
+    IDLE_TIMEOUT = 300
+
     def __init__(self, context: Context):
         super().__init__(context)
         self._browser = None
         self._playwright = None
         self._screenshot_lock = asyncio.Lock()
+        self._screenshot_count = 0
+        self._last_activity_time = time.time()
 
     async def initialize(self):
         """异步初始化，预启动 Playwright 浏览器实例"""
@@ -50,9 +58,29 @@ class WebScreenshotPlugin(Star):
         except Exception as e:
             logger.error(f"WebScreenshotPlugin: Cleanup error: {e}")
 
+    async def _close_browser(self):
+        """关闭当前浏览器实例并释放资源"""
+        try:
+            if self._browser:
+                await self._browser.close()
+        except Exception as e:
+            logger.error(f"WebScreenshotPlugin: Error closing browser: {e}")
+        finally:
+            self._browser = None
+
     async def _ensure_browser(self):
         """确保浏览器实例已启动且可用"""
         from playwright.async_api import async_playwright
+
+        # 检查浏览器是否空闲超时，超时则关闭以释放内存
+        if self._browser is not None and self._browser.is_connected():
+            idle_duration = time.time() - self._last_activity_time
+            if idle_duration > self.IDLE_TIMEOUT:
+                logger.info(
+                    f"WebScreenshotPlugin: Browser idle for {idle_duration:.0f}s, "
+                    f"closing to save memory."
+                )
+                await self._close_browser()
 
         if self._playwright is None:
             self._playwright = await async_playwright().start()
@@ -74,6 +102,7 @@ class WebScreenshotPlugin(Star):
                 ],
                 env=browser_env,
             )
+            self._screenshot_count = 0
             logger.info("WebScreenshotPlugin: Browser instance created.")
 
     async def _take_screenshot(
@@ -127,6 +156,19 @@ class WebScreenshotPlugin(Star):
 
                 await page.screenshot(**screenshot_options)
                 logger.info(f"WebScreenshotPlugin: Screenshot saved to {filepath}")
+
+                # 更新活动时间
+                self._last_activity_time = time.time()
+                # 截图计数 +1，达到阈值则重启浏览器
+                self._screenshot_count += 1
+                if self._screenshot_count >= self.SCREENSHOTS_PER_RESTART:
+                    logger.info(
+                        f"WebScreenshotPlugin: Reached {self._screenshot_count} "
+                        f"screenshots, restarting browser."
+                    )
+                    await self._close_browser()
+                    self._screenshot_count = 0
+
                 return filepath
             finally:
                 await page.close()
