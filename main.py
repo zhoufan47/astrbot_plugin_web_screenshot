@@ -142,7 +142,7 @@ class WebScreenshotPlugin(Star):
         full_page = False
         timeout = 30000
 
-        # 用正则提取 URL（第一个非--开头的参数）
+        # 分割参数，跳过第一个 token（即命令名本身 "screenshot"）
         parts = text.split()
         for i, part in enumerate(parts):
             if part == "--width" and i + 1 < len(parts):
@@ -162,7 +162,7 @@ class WebScreenshotPlugin(Star):
                     pass
             elif part == "--full-page":
                 full_page = True
-            elif not part.startswith("--") and url is None:
+            elif not part.startswith("--") and url is None and part != "screenshot":
                 url = part
 
         if not url:
