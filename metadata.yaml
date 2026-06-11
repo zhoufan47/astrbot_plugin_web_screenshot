@@ -2,5 +2,5 @@ name: astrbot_plugin_web_screenshot # 插件唯一识别名
 display_name: 网页截图插件 # 用于展示的名字
 desc: 基于 Playwright 的网页截图插件，支持 LLM 工具调用或手动指令进行网页截图。 # 插件简短描述
 version: v1.0.0 # 插件版本号
-author: YourName # 作者
-repo: https://github.com/YourName/astrbot_plugin_web_screenshot # 插件的仓库地址
+author: 棒棒糖 # 作者
+repo: https://github.com/zhoufan47/astrbot_plugin_web_screenshot
