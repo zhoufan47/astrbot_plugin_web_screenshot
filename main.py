@@ -55,6 +55,12 @@ class WebScreenshotPlugin(Star):
         if self._playwright is None:
             self._playwright = await async_playwright().start()
         if self._browser is None or not self._browser.is_connected():
+            # 构建干净的 env：复制当前环境变量，但移除所有代理设置
+            browser_env = os.environ.copy()
+            for var in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy",
+                        "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"]:
+                browser_env.pop(var, None)
+
             self._browser = await self._playwright.chromium.launch(
                 headless=True,
                 args=[
@@ -65,6 +71,7 @@ class WebScreenshotPlugin(Star):
                     "--single-process",
                     "--no-proxy-server",
                 ],
+                env=browser_env,
             )
             logger.info("WebScreenshotPlugin: Browser instance created.")
 
