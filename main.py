@@ -63,6 +63,7 @@ class WebScreenshotPlugin(Star):
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
                     "--single-process",
+                    "--no-proxy-server",
                 ],
             )
             logger.info("WebScreenshotPlugin: Browser instance created.")
